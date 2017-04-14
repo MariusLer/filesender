@@ -29,5 +29,13 @@ func getMyIP() string {
 // Sender called when we are the server
 func Sender() {
 	var ip = getMyIP()
-	fmt.Println(ip)
+	var ipAndPort = ip + ":20000"
+	fmt.Println(ipAndPort)
+	ln, err := net.Listen("tcp", ipAndPort)
+	if err != nil {
+		fmt.Println("ERROR", err)
+		return
+	}
+	defer ln.Close()
+
 }
