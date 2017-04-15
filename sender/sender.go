@@ -2,10 +2,12 @@ package sender
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
 	"strings"
+	"time"
 )
 
 // The sender is the server here
@@ -36,8 +38,10 @@ func getMyIP() string {
 	return localAddr[0:idx]
 }
 
-func connListener(newConnCh chan<- net.Conn) {
+// Sender called when we are the server
+func Sender() {
 	var ip = getMyIP()
+	fmt.Println("Your ip is:", ip)
 	var ipAndPort = ip + ":20000"
 	ln, err := net.Listen("tcp", ipAndPort)
 	if err != nil {
@@ -48,43 +52,10 @@ func connListener(newConnCh chan<- net.Conn) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			if strings.Contains(err.Error(), "use of closed network connection") {
-				return
-			}
-			fmt.Println(err)
+			fmt.Println("Error", err)
+			continue
 		}
-		newConnCh <- conn
-	}
-}
-
-func closeServer(closeServerCh chan<- bool) {
-	for {
-		var closeServer string
-		fmt.Println("Type close to close connection")
-		fmt.Scanln(&closeServer)
-		closeServer = strings.ToLower(closeServer)
-		if closeServer == "close" {
-			closeServerCh <- true
-			return
-		}
-	}
-}
-
-// Sender called when we are the server
-func Sender() {
-	newConnCh := make(chan net.Conn)
-	closeServerCh := make(chan bool)
-
-	go connListener(newConnCh)
-	go closeServer(closeServerCh)
-
-	for {
-		select {
-		case conn := <-newConnCh:
-			go send(conn)
-		case <-closeServerCh:
-			return
-		}
+		go send(conn)
 	}
 }
 
@@ -96,13 +67,30 @@ func send(conn net.Conn) {
 		fmt.Println("Put in absolute filepath")
 		fmt.Scanln(&filepath)
 
-		f, err := os.Open(filepath)
+		f, err := os.Open(strings.TrimSpace(filepath)) // removing whitespaces etc
 		if err != nil {
-			fmt.Println("Error opening file ", err)
+			fmt.Println("Error", err)
 		} else {
 			file = f
 			break
 		}
 	}
-	fmt.Println(file)
+	defer file.Close()
+
+	fileinfo, err := file.Stat()
+	if err != nil {
+		fmt.Println("Error", err)
+	}
+
+	filename := fileinfo.Name()
+
+	conn.Write([]byte(filename))
+
+	time.Sleep(time.Second)
+
+	n, err := io.Copy(conn, file)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("Sending complete", n, "bytes sent")
 }
