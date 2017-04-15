@@ -39,6 +39,6 @@ func Receiver() {
 	}
 	defer newfile.Close()
 
-	nu, _ := io.Copy(newfile, conn)
-	fmt.Println(nu, "Bytes received")
+	nb, _ := io.Copy(newfile, conn)
+	fmt.Println("File received", nb, "Bytes received")
 }
