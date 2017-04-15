@@ -1,30 +1,16 @@
 package sender
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"log"
 	"net"
-	"net/http"
 	"os"
 	"strings"
 	"time"
 )
 
 // The sender is the server here
-
-func getExternalIP() []byte {
-	resp, err := http.Get("http://myexternalip.com/raw")
-	if err != nil {
-		fmt.Println("Error: ", err)
-		return nil
-	}
-	defer resp.Body.Close()
-	var buf bytes.Buffer
-	n, _ := io.Copy(&buf, resp.Body)
-	return buf.Bytes()[0:n]
-}
 
 func getMyIP() string {
 	conn, err := net.Dial("udp", "8.8.8.8:80")
@@ -41,16 +27,11 @@ func getMyIP() string {
 
 // Sender called when we are the server
 func Sender() {
-	//var ip = getMyIP()
-	var ipExt = getExternalIP()
+	var ip = getMyIP()
 	var addr net.TCPAddr
-	var ip net.IP = ipExt
-	addr.IP = ip
+	addr.IP = net.ParseIP(ip)
 	addr.Port = 20000
-	fmt.Println("Your ip is:", string(ip))
-	//var ipAndPort = ip + ":20000"
-	//ln, err := net.Listen("tcp", ipAndPort)
-	fmt.Println(addr)
+	fmt.Println("Your ip is:", ip)
 	ln, err := net.ListenTCP("tcp", &addr)
 	if err != nil {
 		fmt.Println("ERROR", err)

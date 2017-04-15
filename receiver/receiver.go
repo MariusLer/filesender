@@ -12,10 +12,12 @@ func connectToServer() net.Conn {
 	for {
 		fmt.Println("Type in the ip address")
 		fmt.Scanln(&ip)
-		var ipAndPort = ip + ":20000"
-		conn, err := net.Dial("tcp", ipAndPort)
+		var addr net.TCPAddr
+		addr.Port = 20000
+		addr.IP = net.ParseIP(ip)
+		conn, err := net.DialTCP("tcp", nil, &addr)
 		if err != nil {
-			fmt.Println("Error connecting to server")
+			fmt.Println("Error connecting to server", err)
 		} else {
 			return conn
 		}
