@@ -9,13 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/mariusler/filesender/config"
 	"github.com/mariusler/filesender/messages"
 )
-
-// The sender is the server here
 
 func getMyIP() string {
 	conn, err := net.Dial("udp", "8.8.8.8:80")
@@ -68,7 +65,7 @@ func fileWalk(dir string) ([]string, error) {
 func sendFiles(files []string, conn net.Conn) {
 	for _, file := range files {
 		f, err := os.Open(file)
-		var sent int64
+		var bytesSent int64
 		defer f.Close()
 		if err != nil {
 			fmt.Println(err)
@@ -76,15 +73,13 @@ func sendFiles(files []string, conn net.Conn) {
 		}
 		for {
 			n, err := io.CopyN(conn, f, config.ChunkSize)
-			sent += n
-			//fmt.Println("Sent:", sent)
+			bytesSent += n
 			if err == io.EOF {
 				fmt.Println("Reached EOF")
 				break
 			}
 		}
-		fmt.Println("Sent file", file, "Size:", sent)
-		time.Sleep(time.Second)
+		fmt.Println("Sent file", file, "Size:", bytesSent)
 	}
 }
 func isFolder(path string) bool {
@@ -121,7 +116,7 @@ func send(conn net.Conn) {
 		for {
 			fmt.Println("Put in absolute filepath for file or folder")
 			fmt.Scanln(&dir)
-			if isFolder(dir) && dir[len(dir)-1] != '/' {
+			if isFolder(dir) && dir[len(dir)-1] != filepath.Separator {
 				dir += "/"
 			}
 			filepaths, err = fileWalk(dir)
@@ -138,11 +133,11 @@ func send(conn net.Conn) {
 		folders, files := findDirectoriesAndFiles(filepaths)
 		var absolutePathLenght = len(dir)
 		if len(folders) > 0 {
-			topFolder := strings.Split(folders[0], "/")
+			topFolder := strings.Split(folders[0], string(filepath.Separator))
 			fmt.Println(topFolder)
 			absolutePathLenght -= len(topFolder[len(topFolder)-2]) + 1
 		} else {
-			fullPath := strings.Split(files[0], "/")
+			fullPath := strings.Split(files[0], string(filepath.Separator))
 			absolutePathLenght -= len(fullPath[len(fullPath)-1])
 		}
 
@@ -174,5 +169,6 @@ func send(conn net.Conn) {
 		if received == "y" || received == "yes" {
 			sendFiles(files, conn)
 		}
+		return
 	}
 }

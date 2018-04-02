@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -49,7 +50,7 @@ func printTransferInfo(msg messages.TransferInfo) {
 
 func createFolders(files []string) {
 	for _, file := range files {
-		hierarchy := strings.Split(file, "/")
+		hierarchy := strings.Split(file, string(filepath.Separator))
 		if len(hierarchy) > 0 {
 			pathLength := len(file) - len(hierarchy[len(hierarchy)-1])
 			os.MkdirAll(file[:pathLength], os.ModePerm)
