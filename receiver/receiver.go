@@ -67,13 +67,21 @@ func receiveFiles(msg messages.TransferInfo, conn net.Conn) { // Use sizes to di
 		if err != nil {
 			fmt.Println(err)
 		}
+		var n int64
+		var copyErr error
 		for {
 			if (fileSize - receivedBytes) < config.ChunkSize {
-				n, _ := io.CopyN(f, conn, (fileSize - receivedBytes)) // Onle read the remaining bytes, nothing more
+				n, copyErr = io.CopyN(f, conn, (fileSize - receivedBytes)) // Onle read the remaining bytes, nothing more
+				if copyErr != nil {
+					fmt.Println(err)
+				}
 				receivedBytes += n
 				break
 			}
-			n, _ := io.CopyN(f, conn, config.ChunkSize)
+			n, copyErr = io.CopyN(f, conn, config.ChunkSize)
+			if copyErr != nil {
+				fmt.Println(copyErr)
+			}
 			receivedBytes += n
 		}
 		fmt.Println("Received file:", file, "Size:", receivedBytes)

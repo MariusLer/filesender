@@ -62,24 +62,34 @@ func fileWalk(dir string) ([]string, error) {
 	return fileList, err
 }
 
-func sendFiles(files []string, conn net.Conn) {
-	for _, file := range files {
-		f, err := os.Open(file)
-		var bytesSent int64
+func sendFiles(files []string, sizes []int64, conn net.Conn) {
+	for index, _ := range files {
+		fileSize := sizes[index]
+		f, err := os.Open(files[index])
+		var sentBytes int64
 		defer f.Close()
 		if err != nil {
 			fmt.Println(err)
 			continue
 		}
+		var n int64
+		var copyErr error
 		for {
-			n, err := io.CopyN(conn, f, config.ChunkSize)
-			bytesSent += n
-			if err == io.EOF {
-				fmt.Println("Reached EOF")
+			if (fileSize - sentBytes) < config.ChunkSize {
+				n, copyErr = io.CopyN(conn, f, (fileSize - sentBytes)) // Onle write remaining bytes
+				sentBytes += n
+				if copyErr != nil {
+					fmt.Println(copyErr)
+				}
 				break
 			}
+			n, copyErr = io.CopyN(conn, f, config.ChunkSize)
+			sentBytes += n
+			if copyErr != nil {
+				fmt.Println(copyErr)
+			}
 		}
-		fmt.Println("Sent file", file, "Size:", bytesSent)
+		fmt.Println("Sent file", files[index], "Size:", sentBytes)
 	}
 }
 func isFolder(path string) bool {
@@ -117,7 +127,7 @@ func send(conn net.Conn) {
 			fmt.Println("Put in absolute filepath for file or folder")
 			fmt.Scanln(&dir)
 			if isFolder(dir) && dir[len(dir)-1] != filepath.Separator {
-				dir += "/"
+				dir += string(filepath.Separator)
 			}
 			filepaths, err = fileWalk(dir)
 			if err != nil {
@@ -167,7 +177,7 @@ func send(conn net.Conn) {
 		received := string(buf[:n])
 		received = strings.ToLower(received)
 		if received == "y" || received == "yes" {
-			sendFiles(files, conn)
+			sendFiles(files, transMsg.Sizes, conn)
 		}
 		return
 	}
