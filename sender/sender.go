@@ -9,9 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/mariusler/filesender/config"
 	"github.com/mariusler/filesender/messages"
+	"github.com/mariusler/filesender/progressBar"
 )
 
 func getMyIP() string {
@@ -62,11 +64,24 @@ func fileWalk(dir string) ([]string, error) {
 	return fileList, err
 }
 
-func sendFiles(files []string, sizes []int64, conn net.Conn) {
-	for index, _ := range files {
-		fileSize := sizes[index]
+func sendProgressMessage(totalProgress float32, fileProgress float32, file string, progressCh chan<- messages.ProgressInfo) {
+	var progressInfo messages.ProgressInfo
+	progressInfo.Progresses[0] = totalProgress
+	progressInfo.Progresses[1] = fileProgress
+	progressInfo.Currentfile = file
+	progressCh <- progressInfo
+}
+
+func sendFiles(files []string, transferInfo messages.TransferInfo, conn net.Conn) {
+	progressCh := make(chan messages.ProgressInfo)
+	doneSendch := make(chan bool)
+	donePrintCh := make(chan bool)
+	var totalBytesSent int64
+	go progressBar.PrintProgressBarTicker(progressCh, doneSendch, donePrintCh)
+	for index := range files {
+		fileSize := transferInfo.Sizes[index]
 		f, err := os.Open(files[index])
-		var sentBytes int64
+		var fileBytesSent int64
 		defer f.Close()
 		if err != nil {
 			fmt.Println(err)
@@ -74,24 +89,39 @@ func sendFiles(files []string, sizes []int64, conn net.Conn) {
 		}
 		var n int64
 		var copyErr error
+		var counter int
 		for {
-			if (fileSize - sentBytes) < config.ChunkSize {
-				n, copyErr = io.CopyN(conn, f, (fileSize - sentBytes)) // Onle write remaining bytes
-				sentBytes += n
+			counter++
+			if (fileSize - fileBytesSent) < config.ChunkSize {
+				n, copyErr = io.CopyN(conn, f, (fileSize - fileBytesSent)) // Onle write remaining bytes
+				fileBytesSent += n
+				totalBytesSent += n
 				if copyErr != nil {
 					fmt.Println(copyErr)
 				}
 				break
 			}
 			n, copyErr = io.CopyN(conn, f, config.ChunkSize)
-			sentBytes += n
+			fileBytesSent += n
+			totalBytesSent += n
 			if copyErr != nil {
 				fmt.Println(copyErr)
 			}
+			if counter == 40 {
+				counter = 0
+				sendProgressMessage(float32(totalBytesSent)/float32(transferInfo.TotalSize)*100, float32(fileBytesSent)/float32(fileSize)*100, transferInfo.Files[index], progressCh)
+			}
 		}
-		fmt.Println("Sent file", files[index], "Size:", sentBytes)
+		sendProgressMessage(float32(totalBytesSent)/float32(transferInfo.TotalSize)*100, float32(100), transferInfo.Files[index], progressCh)
 	}
+	sendProgressMessage(float32(totalBytesSent)/float32(transferInfo.TotalSize)*100, float32(100), "", progressCh)
+	doneSendch <- true
+	time.Sleep(time.Millisecond * 5)
+	<-donePrintCh
+	fmt.Println()
+	fmt.Println("Done sending")
 }
+
 func isFolder(path string) bool {
 	fileinfo, err := os.Stat(path)
 	if err != nil {
@@ -117,68 +147,72 @@ func findDirectoriesAndFiles(paths []string) ([]string, []string) {
 	return dirs, files
 }
 
-func send(conn net.Conn) {
-	defer conn.Close()
+func getFilePathAndListFiles() ([]string, error) {
 	var dir string
 	var filepaths []string
 	var err error
 	for {
-		for {
-			fmt.Println("Put in absolute filepath for file or folder")
-			fmt.Scanln(&dir)
-			if isFolder(dir) && dir[len(dir)-1] != filepath.Separator {
-				dir += string(filepath.Separator)
-			}
-			filepaths, err = fileWalk(dir)
-			if err != nil {
-				fmt.Println("Error opening files", err)
-				continue
-			}
-			dir = filepaths[0]
-			break
+		fmt.Println("Put in absolute filepath for file or folder")
+		fmt.Scanln(&dir)
+		if isFolder(dir) && dir[len(dir)-1] != filepath.Separator {
+			dir += string(filepath.Separator)
 		}
-		// Add up sizes or file descriptions etc and ask for confirmations
-		// This should prob be an own function
-		var transMsg messages.TransferInfo
-		folders, files := findDirectoriesAndFiles(filepaths)
-		var absolutePathLenght = len(dir)
-		if len(folders) > 0 {
-			topFolder := strings.Split(folders[0], string(filepath.Separator))
-			fmt.Println(topFolder)
-			absolutePathLenght -= len(topFolder[len(topFolder)-2]) + 1
-		} else {
-			fullPath := strings.Split(files[0], string(filepath.Separator))
-			absolutePathLenght -= len(fullPath[len(fullPath)-1])
+		filepaths, err = fileWalk(dir)
+		if err != nil {
+			fmt.Println("Error opening files", err)
+			continue
 		}
+		return filepaths, err
+	}
+}
 
-		for _, file := range files {
-			relativePath := file[absolutePathLenght:] // find all subfolders after specified path
-			fileInfo, err := os.Stat(file)
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-			fmt.Println(relativePath)
-			transMsg.Sizes = append(transMsg.Sizes, fileInfo.Size())
-			transMsg.TotalSize += fileInfo.Size()
-			transMsg.Files = append(transMsg.Files, relativePath)
-		}
-		bytes, err := json.Marshal(transMsg)
+func send(conn net.Conn) {
+	defer conn.Close()
+	filepaths, errr := getFilePathAndListFiles()
+	for errr != nil {
+		filepaths, errr = getFilePathAndListFiles()
+	}
+	dir := filepaths[0] // Top level folder
+
+	// Add up sizes or file descriptions etc and ask for confirmations
+	// This should prob be an own function
+	var transMsg messages.TransferInfo
+	folders, files := findDirectoriesAndFiles(filepaths)
+	var absolutePathLenght = len(dir)
+	if len(folders) > 0 {
+		topFolder := strings.Split(folders[0], string(filepath.Separator))
+		absolutePathLenght -= len(topFolder[len(topFolder)-2]) + 1
+	} else {
+		fullPath := strings.Split(files[0], string(filepath.Separator))
+		absolutePathLenght -= len(fullPath[len(fullPath)-1])
+	}
+
+	for _, file := range files {
+		relativePath := file[absolutePathLenght:] // find all subfolders after specified path
+		fileInfo, err := os.Stat(file)
 		if err != nil {
 			fmt.Println(err)
 			continue
 		}
-		conn.Write(bytes)
-		buf := make([]byte, 8)
-		n, err := conn.Read(buf)
-		if err != nil {
-			fmt.Println("wiuuuuuuuuuuuuut", err)
-		}
-		received := string(buf[:n])
-		received = strings.ToLower(received)
-		if received == "y" || received == "yes" {
-			sendFiles(files, transMsg.Sizes, conn)
-		}
+		fmt.Println(relativePath)
+		transMsg.Sizes = append(transMsg.Sizes, fileInfo.Size())
+		transMsg.TotalSize += fileInfo.Size()
+		transMsg.Files = append(transMsg.Files, relativePath)
+	}
+	bytes, err := json.Marshal(transMsg)
+	if err != nil {
+		fmt.Println(err)
 		return
+	}
+	conn.Write(bytes)
+	buf := make([]byte, 8)
+	n, err := conn.Read(buf)
+	if err != nil {
+		fmt.Println("Error reading response", err)
+	}
+	received := string(buf[:n])
+	received = strings.ToLower(received)
+	if received == "y" || received == "yes" {
+		sendFiles(files, transMsg, conn)
 	}
 }

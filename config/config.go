@@ -5,4 +5,6 @@ const (
 	Port = 50000
 	// ChunkSize for size of chunks sent
 	ChunkSize = 64
+	// ProgressBarRefreshTime time in miliseconds for updationg prog bar
+	ProgressBarRefreshTime = 500
 )

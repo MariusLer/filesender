@@ -6,3 +6,9 @@ type TransferInfo struct {
 	Sizes     []int64
 	TotalSize int64
 }
+
+// ProgressInfo used to print prog bar
+type ProgressInfo struct {
+	Progresses  [2]float32
+	Currentfile string
+}

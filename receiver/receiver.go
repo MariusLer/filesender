@@ -12,6 +12,7 @@ import (
 
 	"github.com/mariusler/filesender/config"
 	"github.com/mariusler/filesender/messages"
+	"github.com/mariusler/filesender/progressBar"
 )
 
 func connectToServer() net.Conn {
@@ -58,7 +59,20 @@ func createFolders(files []string) {
 	}
 }
 
+func sendProgressMessage(totalProgress float32, fileProgress float32, file string, progressCh chan<- messages.ProgressInfo) {
+	var progressInfo messages.ProgressInfo
+	progressInfo.Progresses[0] = totalProgress
+	progressInfo.Progresses[1] = fileProgress
+	progressInfo.Currentfile = file
+	progressCh <- progressInfo
+}
+
 func receiveFiles(msg messages.TransferInfo, conn net.Conn) { // Use sizes to display progress
+	progressCh := make(chan messages.ProgressInfo)
+	doneSendch := make(chan bool)
+	donePrintCh := make(chan bool)
+	var totalReceivedBytes int64
+	go progressBar.PrintProgressBarTicker(progressCh, doneSendch, donePrintCh)
 	for ind, file := range msg.Files {
 		var receivedBytes int64
 		fileSize := msg.Sizes[ind]
@@ -69,13 +83,16 @@ func receiveFiles(msg messages.TransferInfo, conn net.Conn) { // Use sizes to di
 		}
 		var n int64
 		var copyErr error
+		var counter int // Used to only send progressinfo some times
 		for {
+			counter++
 			if (fileSize - receivedBytes) < config.ChunkSize {
 				n, copyErr = io.CopyN(f, conn, (fileSize - receivedBytes)) // Onle read the remaining bytes, nothing more
 				if copyErr != nil {
 					fmt.Println(err)
 				}
 				receivedBytes += n
+				totalReceivedBytes += n
 				break
 			}
 			n, copyErr = io.CopyN(f, conn, config.ChunkSize)
@@ -83,17 +100,29 @@ func receiveFiles(msg messages.TransferInfo, conn net.Conn) { // Use sizes to di
 				fmt.Println(copyErr)
 			}
 			receivedBytes += n
+			totalReceivedBytes += n
+			if counter == 40 {
+				counter = 0
+				sendProgressMessage(float32(totalReceivedBytes)/float32(msg.TotalSize)*100, float32(receivedBytes)/float32(fileSize)*100, file, progressCh)
+			}
 		}
-		fmt.Println("Received file:", file, "Size:", receivedBytes)
+		sendProgressMessage(float32(totalReceivedBytes)/float32(msg.TotalSize)*100, float32(100), file, progressCh)
 	}
+	sendProgressMessage(float32(totalReceivedBytes)/float32(msg.TotalSize)*100, float32(100), "", progressCh)
+	doneSendch <- true
+	time.Sleep(time.Millisecond * 5)
+	<-donePrintCh
+	fmt.Println()
+	fmt.Println("Done")
 }
 
 // Receiver calles when we are receivging a file
 func Receiver() {
 	conn := connectToServer()
 	defer conn.Close()
+	fmt.Println("Waiting for server")
 
-	buf := make([]byte, 10240) // 10 KiB buffer
+	buf := make([]byte, 1048576) // 1 MiB buffer
 	var msg messages.TransferInfo
 	n, err := conn.Read(buf)
 	if err != nil {
