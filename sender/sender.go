@@ -1,11 +1,13 @@
 package sender
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,26 +18,14 @@ import (
 	"github.com/mariusler/filesender/progressBar"
 )
 
-func getMyIP() string {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer conn.Close()
-
-	localAddr := conn.LocalAddr().String()
-	idx := strings.LastIndex(localAddr, ":")
-
-	return localAddr[0:idx]
-}
-
 // Sender called when we are the server
 func Sender() {
-	var ip = getMyIP()
+	var externalIP = getExternalIP()
+	var localIP = getLocalIP()
 	var addr net.TCPAddr
-	addr.IP = net.ParseIP(ip)
 	addr.Port = config.Port
-	fmt.Println("Your ip is:", ip)
+	fmt.Println("Your local ip is:", localIP)
+	fmt.Println("Your external ip is:", externalIP)
 	ln, err := net.ListenTCP("tcp", &addr)
 	if err != nil {
 		fmt.Println("ERROR", err)
@@ -50,6 +40,82 @@ func Sender() {
 		}
 		go send(conn)
 	}
+}
+
+func send(conn net.Conn) {
+	defer conn.Close()
+	filepaths, errr := getFilePathAndListFiles()
+	for errr != nil {
+		filepaths, errr = getFilePathAndListFiles()
+	}
+	dir := filepaths[0] // Top level folder
+
+	// Add up sizes or file descriptions etc and ask for confirmations
+	// This should prob be an own function
+	var transMsg messages.TransferInfo
+	folders, files := findDirectoriesAndFiles(filepaths)
+	var absolutePathLenght = len(dir)
+	if len(folders) > 0 {
+		topFolder := strings.Split(folders[0], string(filepath.Separator))
+		absolutePathLenght -= len(topFolder[len(topFolder)-2]) + 1
+	} else {
+		fullPath := strings.Split(files[0], string(filepath.Separator))
+		absolutePathLenght -= len(fullPath[len(fullPath)-1])
+	}
+
+	for _, file := range files {
+		relativePath := file[absolutePathLenght:] // find all subfolders after specified path
+		fileInfo, err := os.Stat(file)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+		fmt.Println(relativePath)
+		transMsg.Sizes = append(transMsg.Sizes, fileInfo.Size())
+		transMsg.TotalSize += fileInfo.Size()
+		transMsg.Files = append(transMsg.Files, relativePath)
+	}
+	bytes, err := json.Marshal(transMsg)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	conn.Write(bytes)
+	buf := make([]byte, 8)
+	n, err := conn.Read(buf)
+	if err != nil {
+		fmt.Println("Error reading response", err)
+	}
+	received := string(buf[:n])
+	received = strings.ToLower(received)
+	if received == "y" || received == "yes" {
+		sendFiles(files, transMsg, conn)
+	}
+}
+
+func getLocalIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr().String()
+	idx := strings.LastIndex(localAddr, ":")
+
+	return localAddr[0:idx]
+}
+
+func getExternalIP() string {
+	resp, err := http.Get("http://myexternalip.com/raw")
+	if err != nil {
+		fmt.Println("Error: ", err)
+		return ""
+	}
+	defer resp.Body.Close()
+	var buf bytes.Buffer
+	n, _ := io.Copy(&buf, resp.Body)
+	return string(buf.Bytes()[0:n])
 }
 
 func fileWalk(dir string) ([]string, error) {
@@ -163,56 +229,5 @@ func getFilePathAndListFiles() ([]string, error) {
 			continue
 		}
 		return filepaths, err
-	}
-}
-
-func send(conn net.Conn) {
-	defer conn.Close()
-	filepaths, errr := getFilePathAndListFiles()
-	for errr != nil {
-		filepaths, errr = getFilePathAndListFiles()
-	}
-	dir := filepaths[0] // Top level folder
-
-	// Add up sizes or file descriptions etc and ask for confirmations
-	// This should prob be an own function
-	var transMsg messages.TransferInfo
-	folders, files := findDirectoriesAndFiles(filepaths)
-	var absolutePathLenght = len(dir)
-	if len(folders) > 0 {
-		topFolder := strings.Split(folders[0], string(filepath.Separator))
-		absolutePathLenght -= len(topFolder[len(topFolder)-2]) + 1
-	} else {
-		fullPath := strings.Split(files[0], string(filepath.Separator))
-		absolutePathLenght -= len(fullPath[len(fullPath)-1])
-	}
-
-	for _, file := range files {
-		relativePath := file[absolutePathLenght:] // find all subfolders after specified path
-		fileInfo, err := os.Stat(file)
-		if err != nil {
-			fmt.Println(err)
-			continue
-		}
-		fmt.Println(relativePath)
-		transMsg.Sizes = append(transMsg.Sizes, fileInfo.Size())
-		transMsg.TotalSize += fileInfo.Size()
-		transMsg.Files = append(transMsg.Files, relativePath)
-	}
-	bytes, err := json.Marshal(transMsg)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	conn.Write(bytes)
-	buf := make([]byte, 8)
-	n, err := conn.Read(buf)
-	if err != nil {
-		fmt.Println("Error reading response", err)
-	}
-	received := string(buf[:n])
-	received = strings.ToLower(received)
-	if received == "y" || received == "yes" {
-		sendFiles(files, transMsg, conn)
 	}
 }

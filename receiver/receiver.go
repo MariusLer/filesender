@@ -15,56 +15,34 @@ import (
 	"github.com/mariusler/filesender/progressBar"
 )
 
-func connectToServer() net.Conn {
-	var ip string
-	for {
-		fmt.Println("Type in the ip address")
-		fmt.Scanln(&ip)
-		var addr net.TCPAddr
-		addr.Port = config.Port
-		addr.IP = net.ParseIP(ip)
-		var counter = 0
-		for {
-			conn, err := net.DialTCP("tcp", nil, &addr)
-			if err != nil {
-				fmt.Println("Error connecting to server", err)
-				counter++
-				if counter == 10 {
-					fmt.Println("Timed out connecting")
-					break
-				}
-				time.Sleep(time.Second)
-			} else {
-				return conn
-			}
-		}
-	}
-}
+// Receiver calles when we are receivging a file
+func Receiver() {
+	conn := connectToServer()
+	defer conn.Close()
+	fmt.Println("Waiting for server")
 
-func printTransferInfo(msg messages.TransferInfo) {
-	fmt.Println("Listing all files to be received")
-	for ind := range msg.Files {
-		fmt.Println("File:", msg.Files[ind], "Size:", msg.Sizes[ind], "Bytes")
+	buf := make([]byte, 1048576) // 1 MiB buffer
+	var msg messages.TransferInfo
+	n, err := conn.Read(buf)
+	if err != nil {
+		fmt.Println(err)
 	}
-	fmt.Println("Totalsize:", msg.TotalSize, "Bytes")
-}
-
-func createFolders(files []string) {
-	for _, file := range files {
-		hierarchy := strings.Split(file, string(filepath.Separator))
-		if len(hierarchy) > 0 {
-			pathLength := len(file) - len(hierarchy[len(hierarchy)-1])
-			os.MkdirAll(file[:pathLength], os.ModePerm)
-		}
+	jsonErr := json.Unmarshal(buf[:n], &msg)
+	if jsonErr != nil {
+		fmt.Println(jsonErr)
 	}
-}
-
-func sendProgressMessage(totalProgress float32, fileProgress float32, file string, progressCh chan<- messages.ProgressInfo) {
-	var progressInfo messages.ProgressInfo
-	progressInfo.Progresses[0] = totalProgress
-	progressInfo.Progresses[1] = fileProgress
-	progressInfo.Currentfile = file
-	progressCh <- progressInfo
+	printTransferInfo(msg)
+	fmt.Println("Enter y or yes to receive these files")
+	var input string
+	fmt.Scanln(&input)
+	input = strings.ToLower(input)
+	if input != "y" && input != "yes" {
+		fmt.Println("You decided not to receive the files")
+		return
+	}
+	createFolders(msg.Files)
+	conn.Write([]byte(input))
+	receiveFiles(msg, conn)
 }
 
 func receiveFiles(msg messages.TransferInfo, conn net.Conn) { // Use sizes to display progress
@@ -116,32 +94,54 @@ func receiveFiles(msg messages.TransferInfo, conn net.Conn) { // Use sizes to di
 	fmt.Println("Done")
 }
 
-// Receiver calles when we are receivging a file
-func Receiver() {
-	conn := connectToServer()
-	defer conn.Close()
-	fmt.Println("Waiting for server")
+func connectToServer() net.Conn {
+	var ip string
+	for {
+		fmt.Println("Type in the ip address")
+		fmt.Scanln(&ip)
+		var addr net.TCPAddr
+		addr.Port = config.Port
+		addr.IP = net.ParseIP(ip)
+		var counter = 0
+		for {
+			conn, err := net.DialTCP("tcp", nil, &addr)
+			if err != nil {
+				fmt.Println("Error connecting to server", err)
+				counter++
+				if counter == 10 {
+					fmt.Println("Timed out connecting")
+					break
+				}
+				time.Sleep(time.Second)
+			} else {
+				return conn
+			}
+		}
+	}
+}
 
-	buf := make([]byte, 1048576) // 1 MiB buffer
-	var msg messages.TransferInfo
-	n, err := conn.Read(buf)
-	if err != nil {
-		fmt.Println(err)
+func printTransferInfo(msg messages.TransferInfo) {
+	fmt.Println("Listing all files to be received")
+	for ind := range msg.Files {
+		fmt.Println("File:", msg.Files[ind], "Size:", msg.Sizes[ind], "Bytes")
 	}
-	jsonErr := json.Unmarshal(buf[:n], &msg)
-	if jsonErr != nil {
-		fmt.Println(jsonErr)
+	fmt.Println("Totalsize:", msg.TotalSize, "Bytes")
+}
+
+func createFolders(files []string) {
+	for _, file := range files {
+		hierarchy := strings.Split(file, string(filepath.Separator))
+		if len(hierarchy) > 0 {
+			pathLength := len(file) - len(hierarchy[len(hierarchy)-1])
+			os.MkdirAll(file[:pathLength], os.ModePerm)
+		}
 	}
-	printTransferInfo(msg)
-	fmt.Println("Enter y or yes to receive these files")
-	var input string
-	fmt.Scanln(&input)
-	input = strings.ToLower(input)
-	if input != "y" && input != "yes" {
-		fmt.Println("You decided not to receive the files")
-		return
-	}
-	createFolders(msg.Files)
-	conn.Write([]byte(input))
-	receiveFiles(msg, conn)
+}
+
+func sendProgressMessage(totalProgress float32, fileProgress float32, file string, progressCh chan<- messages.ProgressInfo) {
+	var progressInfo messages.ProgressInfo
+	progressInfo.Progresses[0] = totalProgress
+	progressInfo.Progresses[1] = fileProgress
+	progressInfo.Currentfile = file
+	progressCh <- progressInfo
 }
