@@ -135,6 +135,7 @@ func sendFiles(files []string, transferInfo messages.TransferInfo, conn net.Conn
 	var totalBytesSent int64
 	ticker := time.NewTicker(time.Millisecond * config.ProgressBarRefreshTime)
 	for index := range files {
+		var buf bytes.Buffer
 		fileSize := transferInfo.Sizes[index]
 		f, err := os.Open(files[index])
 		var fileBytesSent int64
@@ -159,7 +160,8 @@ func sendFiles(files []string, transferInfo messages.TransferInfo, conn net.Conn
 				fileBytesSent += n
 				totalBytesSent += n
 				if copyErr != nil {
-					fmt.Println(copyErr)
+					fmt.Println("Not full copy", copyErr)
+					break
 				}
 				break
 			}
@@ -167,9 +169,11 @@ func sendFiles(files []string, transferInfo messages.TransferInfo, conn net.Conn
 			fileBytesSent += n
 			totalBytesSent += n
 			if copyErr != nil {
-				fmt.Println(copyErr)
+				fmt.Println("Full copy", copyErr)
+				break
 			}
 		}
+		fmt.Println(buf.String())
 	}
 	time.Sleep(time.Millisecond)
 	progressInfo.Progresses[0] = float32(totalBytesSent) / float32(transferInfo.TotalSize) * 100
