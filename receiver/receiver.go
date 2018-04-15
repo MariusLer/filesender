@@ -46,11 +46,9 @@ func Receiver() {
 }
 
 func receiveFiles(msg messages.TransferInfo, conn net.Conn) { // Use sizes to display progress
-	progressCh := make(chan messages.ProgressInfo)
-	doneSendch := make(chan bool)
-	donePrintCh := make(chan bool)
+	var progressInfo messages.ProgressInfo
 	var totalReceivedBytes int64
-	go progressBar.PrintProgressBarTicker(progressCh, doneSendch, donePrintCh)
+	ticker := time.NewTicker(time.Millisecond * config.ProgressBarRefreshTime)
 	for ind, file := range msg.Files {
 		var receivedBytes int64
 		fileSize := msg.Sizes[ind]
@@ -61,9 +59,15 @@ func receiveFiles(msg messages.TransferInfo, conn net.Conn) { // Use sizes to di
 		}
 		var n int64
 		var copyErr error
-		var counter int // Used to only send progressinfo some times
 		for {
-			counter++
+			select {
+			case <-ticker.C:
+				progressInfo.Progresses[0] = float32(totalReceivedBytes) / float32(msg.TotalSize) * 100
+				progressInfo.Progresses[1] = float32(receivedBytes) / float32(fileSize) * 100
+				progressInfo.Currentfile = msg.Files[ind]
+				go progressBar.PrintProgressBar(progressInfo)
+			default: // Skip if ticker is not out
+			}
 			if (fileSize - receivedBytes) < config.ChunkSize {
 				n, copyErr = io.CopyN(f, conn, (fileSize - receivedBytes)) // Onle read the remaining bytes, nothing more
 				if copyErr != nil {
@@ -79,17 +83,12 @@ func receiveFiles(msg messages.TransferInfo, conn net.Conn) { // Use sizes to di
 			}
 			receivedBytes += n
 			totalReceivedBytes += n
-			if counter == 40 {
-				counter = 0
-				sendProgressMessage(float32(totalReceivedBytes)/float32(msg.TotalSize)*100, float32(receivedBytes)/float32(fileSize)*100, file, progressCh)
-			}
 		}
-		sendProgressMessage(float32(totalReceivedBytes)/float32(msg.TotalSize)*100, float32(100), file, progressCh)
 	}
-	sendProgressMessage(float32(totalReceivedBytes)/float32(msg.TotalSize)*100, float32(100), "", progressCh)
-	doneSendch <- true
-	time.Sleep(time.Millisecond * 5)
-	<-donePrintCh
+	time.Sleep(time.Millisecond)
+	progressInfo.Progresses[0] = float32(totalReceivedBytes) / float32(msg.TotalSize) * 100
+	progressInfo.Progresses[1] = float32(100)
+	progressBar.PrintProgressBar(progressInfo)
 	fmt.Println()
 	fmt.Println("Done")
 }

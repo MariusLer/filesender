@@ -2,38 +2,14 @@ package progressBar
 
 import (
 	"fmt"
-	"time"
 
-	"github.com/mariusler/filesender/config"
 	"github.com/mariusler/filesender/messages"
 )
 
 const numPoints = 20
 
-// PrintProgressBarTicker prints a prog bar with interval
-func PrintProgressBarTicker(progressesCh <-chan messages.ProgressInfo, doneSendingCh <-chan bool, donePrintingCh chan<- bool) {
-	var progressInfo messages.ProgressInfo
-	ticker := time.NewTicker(config.ProgressBarRefreshTime)
-	for {
-		select {
-		case msg := <-progressesCh:
-			if msg.Currentfile != "" {
-				progressInfo = msg
-			} else {
-				progressInfo.Progresses = msg.Progresses
-			}
-		case <-ticker.C:
-			printProgressBar(progressInfo)
-		case <-doneSendingCh:
-			printProgressBar(progressInfo)
-			donePrintingCh <- true
-			ticker.Stop()
-			return
-		}
-	}
-}
-
-func printProgressBar(progressInfo messages.ProgressInfo) {
+// PrintProgressBar used to print a progress bar with prog and filename
+func PrintProgressBar(progressInfo messages.ProgressInfo) {
 	fmt.Print("Total progress:")
 	for index := range progressInfo.Progresses {
 		prog := int(float32(progressInfo.Progresses[index]/100*numPoints) + float32(0.5))
@@ -54,5 +30,5 @@ func printProgressBar(progressInfo messages.ProgressInfo) {
 			fmt.Print("name: " + progressInfo.Currentfile)
 		}
 	}
-	fmt.Print("            \r")
+	fmt.Print("                                 \r")
 }

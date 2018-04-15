@@ -130,20 +130,10 @@ func fileWalk(dir string) ([]string, error) {
 	return fileList, err
 }
 
-func sendProgressMessage(totalProgress float32, fileProgress float32, file string, progressCh chan<- messages.ProgressInfo) {
-	var progressInfo messages.ProgressInfo
-	progressInfo.Progresses[0] = totalProgress
-	progressInfo.Progresses[1] = fileProgress
-	progressInfo.Currentfile = file
-	progressCh <- progressInfo
-}
-
 func sendFiles(files []string, transferInfo messages.TransferInfo, conn net.Conn) {
-	progressCh := make(chan messages.ProgressInfo)
-	doneSendch := make(chan bool)
-	donePrintCh := make(chan bool)
+	var progressInfo messages.ProgressInfo
 	var totalBytesSent int64
-	go progressBar.PrintProgressBarTicker(progressCh, doneSendch, donePrintCh)
+	ticker := time.NewTicker(time.Millisecond * config.ProgressBarRefreshTime)
 	for index := range files {
 		fileSize := transferInfo.Sizes[index]
 		f, err := os.Open(files[index])
@@ -155,9 +145,15 @@ func sendFiles(files []string, transferInfo messages.TransferInfo, conn net.Conn
 		}
 		var n int64
 		var copyErr error
-		var counter int
 		for {
-			counter++
+			select {
+			case <-ticker.C:
+				progressInfo.Progresses[0] = float32(totalBytesSent) / float32(transferInfo.TotalSize) * 100
+				progressInfo.Progresses[1] = float32(fileBytesSent) / float32(fileSize) * 100
+				progressInfo.Currentfile = transferInfo.Files[index]
+				progressBar.PrintProgressBar(progressInfo)
+			default: // Skip if ticker is not out
+			}
 			if (fileSize - fileBytesSent) < config.ChunkSize {
 				n, copyErr = io.CopyN(conn, f, (fileSize - fileBytesSent)) // Onle write remaining bytes
 				fileBytesSent += n
@@ -173,17 +169,12 @@ func sendFiles(files []string, transferInfo messages.TransferInfo, conn net.Conn
 			if copyErr != nil {
 				fmt.Println(copyErr)
 			}
-			if counter == 40 {
-				counter = 0
-				sendProgressMessage(float32(totalBytesSent)/float32(transferInfo.TotalSize)*100, float32(fileBytesSent)/float32(fileSize)*100, transferInfo.Files[index], progressCh)
-			}
 		}
-		sendProgressMessage(float32(totalBytesSent)/float32(transferInfo.TotalSize)*100, float32(100), transferInfo.Files[index], progressCh)
 	}
-	sendProgressMessage(float32(totalBytesSent)/float32(transferInfo.TotalSize)*100, float32(100), "", progressCh)
-	doneSendch <- true
-	time.Sleep(time.Millisecond * 5)
-	<-donePrintCh
+	time.Sleep(time.Millisecond)
+	progressInfo.Progresses[0] = float32(totalBytesSent) / float32(transferInfo.TotalSize) * 100
+	progressInfo.Progresses[1] = float32(100)
+	progressBar.PrintProgressBar(progressInfo)
 	fmt.Println()
 	fmt.Println("Done sending")
 }
