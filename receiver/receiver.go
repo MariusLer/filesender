@@ -1,7 +1,6 @@
 package receiver
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -51,7 +50,6 @@ func receiveFiles(msg messages.TransferInfo, conn net.Conn) { // Use sizes to di
 	var totalReceivedBytes int64
 	ticker := time.NewTicker(time.Millisecond * config.ProgressBarRefreshTime)
 	for ind, file := range msg.Files {
-		var buf bytes.Buffer
 		var receivedBytes int64
 		fileSize := msg.Sizes[ind]
 		f, err := os.Create(file)
@@ -72,7 +70,7 @@ func receiveFiles(msg messages.TransferInfo, conn net.Conn) { // Use sizes to di
 			default: // Skip if ticker is not out
 			}
 			if (fileSize - receivedBytes) < config.ChunkSize {
-				n, copyErr = io.CopyN(&buf, conn, (fileSize - receivedBytes)) // Onle read the remaining bytes, nothing more
+				n, copyErr = io.CopyN(f, conn, (fileSize - receivedBytes)) // Onle read the remaining bytes, nothing more
 				receivedBytes += n
 				totalReceivedBytes += n
 				if copyErr != nil {
@@ -81,7 +79,7 @@ func receiveFiles(msg messages.TransferInfo, conn net.Conn) { // Use sizes to di
 				}
 				break
 			}
-			n, copyErr = io.CopyN(&buf, conn, config.ChunkSize)
+			n, copyErr = io.CopyN(f, conn, config.ChunkSize)
 			receivedBytes += n
 			totalReceivedBytes += n
 			if copyErr != nil {
@@ -89,7 +87,6 @@ func receiveFiles(msg messages.TransferInfo, conn net.Conn) { // Use sizes to di
 				break
 			}
 		}
-		fmt.Println(buf.String())
 	}
 	time.Sleep(time.Millisecond)
 	progressInfo.Progresses[0] = float32(totalReceivedBytes) / float32(msg.TotalSize) * 100

@@ -135,7 +135,6 @@ func sendFiles(files []string, transferInfo messages.TransferInfo, conn net.Conn
 	var totalBytesSent int64
 	ticker := time.NewTicker(time.Millisecond * config.ProgressBarRefreshTime)
 	for index := range files {
-		var buf bytes.Buffer
 		fileSize := transferInfo.Sizes[index]
 		f, err := os.Open(files[index])
 		var fileBytesSent int64
@@ -144,8 +143,7 @@ func sendFiles(files []string, transferInfo messages.TransferInfo, conn net.Conn
 			fmt.Println(err)
 			continue
 		}
-		var n int64
-		var copyErr error
+		sendbuffer := make([]byte, config.ChunkSize)
 		for {
 			select {
 			case <-ticker.C:
@@ -155,25 +153,21 @@ func sendFiles(files []string, transferInfo messages.TransferInfo, conn net.Conn
 				progressBar.PrintProgressBar(progressInfo)
 			default: // Skip if ticker is not out
 			}
-			if (fileSize - fileBytesSent) < config.ChunkSize {
-				n, copyErr = io.CopyN(conn, f, (fileSize - fileBytesSent)) // Onle write remaining bytes
-				fileBytesSent += n
-				totalBytesSent += n
-				if copyErr != nil {
-					fmt.Println("Not full copy", copyErr)
-					break
-				}
+			bytesCopied, copyErr := f.Read(sendbuffer)
+			if copyErr != nil && copyErr != io.EOF {
+				fmt.Println(copyErr)
 				break
 			}
-			n, copyErr = io.CopyN(conn, f, config.ChunkSize)
-			fileBytesSent += n
-			totalBytesSent += n
-			if copyErr != nil {
-				fmt.Println("Full copy", copyErr)
+			n, err := conn.Write(sendbuffer[:bytesCopied])
+			fileBytesSent += int64(n)
+			totalBytesSent += int64(n)
+			if err != nil {
+				fmt.Println(err)
+			}
+			if copyErr == io.EOF {
 				break
 			}
 		}
-		fmt.Println(buf.String())
 	}
 	time.Sleep(time.Millisecond)
 	progressInfo.Progresses[0] = float32(totalBytesSent) / float32(transferInfo.TotalSize) * 100
