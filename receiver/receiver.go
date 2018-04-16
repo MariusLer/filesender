@@ -144,11 +144,3 @@ func createFolders(files []string) {
 		}
 	}
 }
-
-func sendProgressMessage(totalProgress float32, fileProgress float32, file string, progressCh chan<- messages.ProgressInfo) {
-	var progressInfo messages.ProgressInfo
-	progressInfo.Progresses[0] = totalProgress
-	progressInfo.Progresses[1] = fileProgress
-	progressInfo.Currentfile = file
-	progressCh <- progressInfo
-}
