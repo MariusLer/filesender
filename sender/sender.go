@@ -1,6 +1,7 @@
 package sender
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/mariusler/filesender/config"
 	"github.com/mariusler/filesender/messages"
 	"github.com/mariusler/filesender/progressBar"
+	"github.com/mariusler/filesender/utility"
 )
 
 // Sender called when we are the server
@@ -63,6 +65,7 @@ func send(conn net.Conn) {
 		absolutePathLenght -= len(fullPath[len(fullPath)-1])
 	}
 
+	fmt.Println("Listing files to be sent")
 	for _, file := range files {
 		relativePath := file[absolutePathLenght:] // find all subfolders after specified path
 		fileInfo, err := os.Stat(file)
@@ -75,6 +78,9 @@ func send(conn net.Conn) {
 		transMsg.TotalSize += fileInfo.Size()
 		transMsg.Files = append(transMsg.Files, relativePath)
 	}
+	fmt.Printf("Total size: ")
+	utility.PrintBytesPrefix(transMsg.TotalSize)
+
 	bytes, err := json.Marshal(transMsg)
 	if err != nil {
 		fmt.Println(err)
@@ -206,9 +212,11 @@ func getFilePathAndListFiles() ([]string, error) {
 	var dir string
 	var filepaths []string
 	var err error
+	scanner := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Println("Put in absolute filepath for file or folder")
-		fmt.Scanln(&dir)
+		scanner.Scan()
+		dir = filepath.Clean(scanner.Text())
 		if isFolder(dir) && dir[len(dir)-1] != filepath.Separator {
 			dir += string(filepath.Separator)
 		}

@@ -30,5 +30,5 @@ func PrintProgressBar(progressInfo messages.ProgressInfo) {
 			fmt.Print("name: " + progressInfo.Currentfile)
 		}
 	}
-	fmt.Print("                                 \r")
+	fmt.Print("                         \r")
 }

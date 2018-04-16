@@ -13,6 +13,7 @@ import (
 	"github.com/mariusler/filesender/config"
 	"github.com/mariusler/filesender/messages"
 	"github.com/mariusler/filesender/progressBar"
+	"github.com/mariusler/filesender/utility"
 )
 
 // Receiver calles when we are receivging a file
@@ -125,9 +126,13 @@ func connectToServer() net.Conn {
 func printTransferInfo(msg messages.TransferInfo) {
 	fmt.Println("Listing all files to be received")
 	for ind := range msg.Files {
-		fmt.Println("File:", msg.Files[ind], "Size:", msg.Sizes[ind], "Bytes")
+		fmt.Print("File: ", msg.Files[ind], " Size: ")
+		utility.PrintBytesPrefix(msg.Sizes[ind])
+		fmt.Println()
 	}
-	fmt.Println("Totalsize:", msg.TotalSize, "Bytes")
+	fmt.Print("Total size: ")
+	utility.PrintBytesPrefix(msg.TotalSize)
+	fmt.Println()
 }
 
 func createFolders(files []string) {
