@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,17 +19,24 @@ import (
 
 // Receiver calles when we are receivging a file
 func Receiver() {
+	var msg messages.TransferInfo
 	conn := connectToServer()
 	defer conn.Close()
 	fmt.Println("Waiting for server")
 
-	buf := make([]byte, 1048576) // 1 MiB buffer
-	var msg messages.TransferInfo
-	n, err := conn.Read(buf)
+	sizeBuf := make([]byte, 32)
+	n, err := conn.Read(sizeBuf)
+	msgSize, _ := strconv.Atoi(string(sizeBuf[:n]))
 	if err != nil {
 		fmt.Println(err)
 	}
-	jsonErr := json.Unmarshal(buf[:n], &msg)
+
+	buf := make([]byte, msgSize)
+	_, copyErr := io.ReadFull(conn, buf)
+	if copyErr != nil {
+		fmt.Println(err)
+	}
+	jsonErr := json.Unmarshal(buf, &msg)
 	if jsonErr != nil {
 		fmt.Println(jsonErr)
 	}

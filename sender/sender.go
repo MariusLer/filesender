@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -80,13 +81,22 @@ func send(conn net.Conn) {
 	}
 	fmt.Printf("Total size: ")
 	utility.PrintBytesPrefix(transMsg.TotalSize)
+	fmt.Println()
 
 	bytes, err := json.Marshal(transMsg)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	conn.Write(bytes)
+	_, err = conn.Write([]byte(strconv.Itoa(len(bytes))))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	_, err = conn.Write(bytes)
+	if err != nil {
+		fmt.Println("Error reading response", err)
+	}
 	buf := make([]byte, 8)
 	n, err := conn.Read(buf)
 	if err != nil {
