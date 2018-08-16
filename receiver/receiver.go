@@ -62,9 +62,9 @@ func receiveFiles(msg messages.TransferInfo, conn net.Conn) { // Use sizes to di
 		var receivedBytes int64
 		fileSize := msg.Sizes[ind]
 		f, err := os.Create(file)
-		defer f.Close()
 		if err != nil {
 			fmt.Println(err)
+			f.Close()
 			break
 		}
 		var n int64
@@ -84,7 +84,6 @@ func receiveFiles(msg messages.TransferInfo, conn net.Conn) { // Use sizes to di
 				totalReceivedBytes += n
 				if copyErr != nil {
 					fmt.Println(err)
-					break
 				}
 				break
 			}
@@ -96,6 +95,7 @@ func receiveFiles(msg messages.TransferInfo, conn net.Conn) { // Use sizes to di
 				break
 			}
 		}
+		f.Close()
 	}
 	time.Sleep(time.Millisecond)
 	progressInfo.Progresses[0] = float32(totalReceivedBytes) / float32(msg.TotalSize) * 100

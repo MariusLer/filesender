@@ -4,7 +4,7 @@ const (
 	// Port exported
 	Port = 50000
 	// ChunkSize for size of chunks sent
-	ChunkSize = 1024
+	ChunkSize = 32768
 	// ProgressBarRefreshTime time in miliseconds for updationg prog bar
-	ProgressBarRefreshTime = 500
+	ProgressBarRefreshTime = 2000
 )

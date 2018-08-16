@@ -150,16 +150,16 @@ func sendFiles(files []string, transferInfo messages.TransferInfo, conn net.Conn
 	var progressInfo messages.ProgressInfo
 	var totalBytesSent int64
 	ticker := time.NewTicker(time.Millisecond * config.ProgressBarRefreshTime)
+	sendbuffer := make([]byte, config.ChunkSize)
 	for index := range files {
 		fileSize := transferInfo.Sizes[index]
 		f, err := os.Open(files[index])
 		var fileBytesSent int64
-		defer f.Close()
 		if err != nil {
 			fmt.Println(err)
+			f.Close()
 			continue
 		}
-		sendbuffer := make([]byte, config.ChunkSize)
 		for {
 			select {
 			case <-ticker.C:
@@ -184,6 +184,7 @@ func sendFiles(files []string, transferInfo messages.TransferInfo, conn net.Conn
 				break
 			}
 		}
+		f.Close()
 	}
 	time.Sleep(time.Millisecond)
 	progressInfo.Progresses[0] = float32(totalBytesSent) / float32(transferInfo.TotalSize) * 100
